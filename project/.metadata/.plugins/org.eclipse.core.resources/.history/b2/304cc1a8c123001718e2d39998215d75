@@ -1,0 +1,16 @@
+package ctf.agent;
+
+import ctf.common.*;
+
+
+public class txb130030Agent extends Agent 
+{
+	int xPos, yPos;
+
+	public int getMove(AgentEnvironment inEnvironment) 
+	{
+		// TODO Auto-generated method stub
+		return 0;
+	}
+	
+}

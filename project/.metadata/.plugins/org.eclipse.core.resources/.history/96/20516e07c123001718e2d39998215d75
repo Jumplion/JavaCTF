@@ -1,0 +1,8 @@
+package ctf.agent;
+
+import ctf.common.*;
+
+public class txb130030Agent extends Agent 
+{
+	
+}

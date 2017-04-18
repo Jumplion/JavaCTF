@@ -1,0 +1,26 @@
+package ctf.agent;
+
+import java.util.*;
+
+import ctf.common.*;
+
+
+public class txb130030Agent extends Agent 
+{
+	int xPos, yPos;
+	
+	//
+	int mapSize;
+	boolean knowMapSize = false;
+	//
+	
+	ArrayList map[][];
+	
+
+	public int getMove(AgentEnvironment inEnvironment) 
+	{
+		// TODO Auto-generated method stub
+		return 0;
+	}
+	
+}

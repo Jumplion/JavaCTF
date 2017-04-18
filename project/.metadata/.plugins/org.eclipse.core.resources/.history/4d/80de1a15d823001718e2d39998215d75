@@ -1,0 +1,160 @@
+package ctf.agent;
+
+import java.util.*;
+import ctf.common.*;
+
+
+public class txb130030Agent extends Agent 
+{
+	int xPos = 0, yPos = 0;
+	
+	//
+	int mapSize;
+	boolean knowMapSize = false;
+	//
+	
+	public enum ObsType
+	{
+		None(0), Obstacle(1), Friend(2), Foe(3), Bomb(4), TeamFlag(5), EnemFlag(6);
+		private int value;
+		private ObsType(int val){
+			this.value = val;
+		}
+	}
+
+	Map<String, ObsType> map;
+	
+	public int getMove(AgentEnvironment inEnvironment) 
+	{
+		// Do we want the enemy flag or we have the enemy flag? so make our goal our base
+		int goal = !inEnvironment.hasFlag() ? inEnvironment.ENEMY_TEAM : inEnvironment.OUR_TEAM;
+
+		// booleans describing direction of goal
+		// goal is either enemy flag, or our base
+		boolean goalNorth = inEnvironment.isBaseNorth( goal, false );
+		boolean goalSouth = inEnvironment.isBaseSouth( goal, false );
+		boolean goalEast = inEnvironment.isBaseEast( goal, false );
+		boolean goalWest = inEnvironment.isBaseWest( goal, false );
+
+		// now we have direction booleans for our goal	
+		// check for immediate obstacles blocking our path		
+		boolean obstNorth = inEnvironment.isObstacleNorthImmediate();
+		boolean obstSouth = inEnvironment.isObstacleSouthImmediate();
+		boolean obstEast = inEnvironment.isObstacleEastImmediate();
+		boolean obstWest = inEnvironment.isObstacleWestImmediate();
+		
+	    addNode(xPos,yPos+1,obstNorth ? ObsType.Obstacle : ObsType.None);
+		addNode(xPos,yPos-1,obstSouth ? ObsType.Obstacle : ObsType.None);
+		addNode(xPos+1,yPos,obstEast ? ObsType.Obstacle : ObsType.None);
+		addNode(xPos-1,yPos,obstWest ? ObsType.Obstacle : ObsType.None);
+		
+		
+		
+		// If the goal is towards the north
+		if( goalNorth){			
+			
+			// if the goal is north only, and we're not blocked, move north		
+			if( ! goalEast && ! goalWest && !obstNorth )
+				return AgentAction.MOVE_NORTH;
+			
+			// if goal both north and east
+			if(goalEast){
+				// pick north or east for move with 50/50 chance
+				if( Math.random() < 0.5 && !obstNorth )
+					return AgentAction.MOVE_NORTH;
+				if( !obstEast )
+					return AgentAction.MOVE_EAST;
+				if( !obstNorth )
+					return AgentAction.MOVE_NORTH;	
+			}
+			// if goal both north and west			
+			if(goalWest){
+				// pick north or west for move with 50/50 chance
+				if( Math.random() < 0.5 && !obstNorth )
+					return AgentAction.MOVE_NORTH;
+				if( !obstWest )	
+					return AgentAction.MOVE_WEST;
+				if( !obstNorth )
+					return AgentAction.MOVE_NORTH;				
+			}
+		}	
+			
+		// If the goal is towards the South
+		else if(goalSouth){
+			// if the goal is south only, and we're not blocked, move south
+			if( !goalEast && !goalWest && !obstSouth )
+				return AgentAction.MOVE_SOUTH;
+			
+			// do same for south-east and south-west as for north versions	
+			if( goalEast ) {
+				if( Math.random() < 0.5 && !obstSouth )
+					return AgentAction.MOVE_SOUTH;
+				if( !obstEast )
+					return AgentAction.MOVE_EAST;
+				if( !obstSouth )
+					return AgentAction.MOVE_SOUTH;
+			}
+			
+			if( goalWest ) {
+				if( Math.random() < 0.5 && !obstSouth )
+					return AgentAction.MOVE_SOUTH;
+				if( !obstWest )
+					return AgentAction.MOVE_WEST;
+				if( !obstSouth )
+					return AgentAction.MOVE_SOUTH;
+			}
+		}
+		
+		// if the goal is east only, and we're not blocked
+		if( goalEast && !obstEast )
+			return AgentAction.MOVE_EAST;
+		
+		// if the goal is west only, and we're not blocked	
+		if( goalWest && !obstWest )
+			return AgentAction.MOVE_WEST;
+		
+		// otherwise, make any unblocked move
+		if( !obstNorth )
+			return AgentAction.MOVE_NORTH;
+		else if( !obstSouth )
+			return AgentAction.MOVE_SOUTH;
+		else if( !obstEast )
+			return AgentAction.MOVE_EAST;
+		else if( !obstWest ) 
+			return AgentAction.MOVE_WEST;
+		
+		// completely blocked!
+		else
+			return AgentAction.DO_NOTHING;	
+	}
+	
+	private ObsType addNode(int x, int y, ObsType val)
+	{
+		String key = x + ", " + y;
+		map.put(key, val);
+		return val;
+	}
+	
+	private ObsType getNode(int x, int y)
+	{
+		String key = x + ", " + y;
+		return map.get(key);
+	}
+	
+	private ObsType getNorth()
+	{
+		return getNode(xPos, yPos+1);
+	}
+	private ObsType getSouth()
+	{
+		return getNode(xPos, yPos-1);
+	}
+	private ObsType getEast()
+	{
+		return getNode(xPos+1, yPos);
+	}
+	private ObsType getWest()
+	{
+		return getNode(xPos-1, yPos);
+	}
+}
