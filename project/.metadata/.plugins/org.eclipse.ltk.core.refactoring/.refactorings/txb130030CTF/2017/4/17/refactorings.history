@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Rename field &apos;personalMap&apos; in &apos;ctf.agent.txb130030Agent&apos; to &apos;map&apos;&#x0D;&#x0A;- Original project: &apos;txb130030CTF&apos;&#x0D;&#x0A;- Original element: &apos;ctf.agent.txb130030Agent.personalMap&apos;&#x0D;&#x0A;- Renamed element: &apos;ctf.agent.txb130030Agent.map&apos;&#x0D;&#x0A;- Update references to refactored element&#x0D;&#x0A;- Update textual occurrences in comments and strings" delegate="false" deprecate="false" description="Rename field &apos;personalMap&apos;" flags="589830" getter="false" id="org.eclipse.jdt.ui.rename.field" input="/src&lt;ctf.agent{txb130030Agent.java[txb130030Agent^personalMap" name="map" references="true" setter="false" stamp="1493235597026" textual="false" version="1.0"/>
+</session>

@@ -1,0 +1,850 @@
+package ctf.agent;
+
+import java.util.*;
+import ctf.common.*;
+
+enum ObsType{
+	Null(-1), None(0), Obstacle(1), Friend(2), Foe(3), TeamFlag(4), EnemFlag(5), TeamBase(6), EnemBase(7);
+	private int value;
+	private ObsType(int val){
+		this.value = val;
+	}
+}
+
+class Key {
+	private final int x;
+	private final int y;
+	
+	public Key(int x, int y) {
+		this.x = x;
+		this.y = y;
+	}
+	
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) return true;
+		if (!(o instanceof Key)) return false;
+		Key key = (Key) o;
+		return x == key.x && y == key.y;
+	}
+	
+	@Override
+	public int hashCode() {
+		int result = x;
+		result = 31 * result + y;
+		return result;
+	}
+}
+
+class Node{	
+	public double value = -1;
+	
+	public Node prevNode = null;
+	
+	public boolean flagNorth, flagSouth, flagEast, flagWest;
+	public boolean baseNorth, baseSouth, baseEast, baseWest;
+	
+	public ObsType type = ObsType.Null;
+	
+	public int xCoord = -10000;
+	public int yCoord = -10000;
+	
+	Node()
+	{
+		type = ObsType.Null;
+	}
+	
+	Node(ObsType t, int x, int y)
+	{
+		type = t;
+		xCoord = x;
+		yCoord = y;
+	}
+	
+	Node(ObsType t, int x, int y, double val)
+	{
+		type = t;
+		xCoord = x;
+		yCoord = y;
+		value = val;
+	}
+	
+	public void SetXY(int x, int y)
+	{
+		xCoord = x;
+		yCoord = y;
+	}
+
+	public boolean CompareXY(Node n)
+	{
+		return (xCoord == n.xCoord && yCoord == n.yCoord);
+	}
+	
+	public String XY()
+	{
+		return "X: " + xCoord + ", Y: " + yCoord;
+	}
+	
+	public Key getKey()
+	{
+		return new Key(xCoord, yCoord);
+	}
+	
+	public Key GetNSEWKey(int NSEW)
+	{
+		switch(NSEW){
+		case 0: 		
+			return new Key(xCoord, yCoord+1);
+		case 1:
+			return new Key(xCoord, yCoord-1);
+		case 2:
+			return new Key(xCoord+1, yCoord);
+		case 3:
+			return new Key(xCoord-1, yCoord);
+		}
+		
+		return new Key(xCoord, yCoord+1);
+	}
+	
+	public double Distance(Node other)
+	{
+		return Math.sqrt(Math.pow(other.xCoord - xCoord, 2) - Math.pow(other.yCoord - yCoord, 2));
+	}
+	
+	public double Distance(int x, int y)
+	{
+		return Math.sqrt(Math.pow(x - xCoord, 2) - Math.pow(y - yCoord, 2));
+	}
+}
+
+
+public class txb130030Agent extends Agent 
+{	
+	int xPos = 0, yPos = 0;
+	
+	// Fuck it, will just make it a 10,10 grid
+	public static Map<Key, Node> map = new HashMap<Key, Node>();
+	
+	public Node enemyBase = null, teamBase = null;
+	Node currentNode = null;
+	Node previousNode = null;
+	Node spawnNode = null;
+	
+	ObsType nType, sType, eType, wType;
+	boolean nFlag, sFlag, eFlag, wFlag;
+	boolean nBase, sBase, eBase, wBase;
+	boolean nBaseEnem, sBaseEnem, eBaseEnem, wBaseEnem;
+
+	public boolean botLeftAgent = false;
+	public boolean botRightAgent = false;
+	public boolean topLeftAgent = false;
+	public boolean topRightAgent = false;
+	
+	public boolean teamLeft = false;
+	
+	public int ID = 0;
+	public static int numAgents = 0;
+	public boolean initialized = false;
+	
+	public static List<Agent> agents = new ArrayList<Agent>();
+
+	public boolean IsDefender()
+	{
+		return ID == 0;
+	}
+	
+	public void Initialize()
+	{
+		initialized = true;
+		
+		ID = numAgents;
+		numAgents++;
+		
+		if(numAgents % 2 != 0)
+			map.clear();
+		
+		agents.add(this);
+		
+		// Initialize a 10x10 map for now
+		if(map.isEmpty())
+			for(int x=-1; x<=10; x++)
+				for(int y=-1; y<=10; y++)
+				{
+					// Border obstacle
+					if(x == -1 || x == 10 || y == -1 || y == 10)
+						map.put(new Key(x,y), new Node(ObsType.Obstacle, x, y));
+					else
+						map.put(new Key(x,y), new Node(ObsType.None, x, y));
+				}
+		
+		// If this Agent started in the bottom/top corner on the left/right side
+		if(nBaseEnem && wBaseEnem)
+		{
+			currentNode = spawnNode = map.get(new Key(9,0));
+			xPos = 9;
+			yPos = 0;
+			botRightAgent = true;
+			
+			map.get(new Key(9,4)).type = ObsType.TeamBase;
+			map.get(new Key(0,4)).type = ObsType.EnemBase;
+			
+			teamBase = map.get(new Key(9,3));
+			enemyBase = map.get(new Key(0,3));
+		}
+		else if(sBaseEnem && wBaseEnem)
+		{
+			currentNode = spawnNode = map.get(new Key(9,9));
+			topRightAgent = true;
+			xPos = 9;
+			yPos = 9;			
+
+			map.get(new Key(9,4)).type = ObsType.TeamBase;
+			map.get(new Key(0,4)).type = ObsType.EnemBase;
+			
+			teamBase = map.get(new Key(9,3));
+			enemyBase = map.get(new Key(0,3));
+		}
+		else if(nBaseEnem && eBaseEnem)
+		{
+			currentNode = spawnNode = map.get(new Key(0,0));
+			botLeftAgent = true;
+			xPos = 0;
+			yPos = 0;
+			
+			map.get(new Key(0,4)).type = ObsType.TeamBase;
+			map.get(new Key(9,4)).type = ObsType.EnemBase;
+			
+			teamBase = map.get(new Key(0,3));
+			enemyBase = map.get(new Key(9,3));
+		}
+		else
+		{
+			currentNode = spawnNode = map.get(new Key(0,9));
+			topLeftAgent = true;
+			xPos = 0;
+			yPos = 9;
+			
+			map.get(new Key(0,4)).type = ObsType.TeamBase;
+			map.get(new Key(9,4)).type = ObsType.EnemBase;
+			
+			teamBase = map.get(new Key(0,3));
+			enemyBase = map.get(new Key(9,3));
+		}
+		
+		// Create values for the nodes
+		for(int x=0; x<9; x++)
+			for(int y=0; y<9; y++)
+				map.get(new Key(x,y)).value = enemyBase.Distance(map.get(new Key(x,y)));	
+	}
+	
+	public void CheckIfRespawned()
+	{
+		// If the base is directly north/south of the agent
+		// Reset the currentNode to be the agent's spawn node
+		
+		if(botRightAgent && nBaseEnem && wBaseEnem && nBase && !wBase && !eBase && sType == ObsType.Obstacle)
+		{
+			currentNode = map.get(spawnNode.getKey());
+			xPos = spawnNode.xCoord;
+			yPos = spawnNode.yCoord;
+		}
+		else if(topRightAgent && sBaseEnem && wBaseEnem && sBase && !wBase && !eBase && nType == ObsType.Obstacle)
+		{
+			currentNode = map.get(spawnNode.getKey());
+			xPos = spawnNode.xCoord;
+			yPos = spawnNode.yCoord;
+		}
+		else if(botLeftAgent && nBaseEnem && eBaseEnem && nBase && !wBase && !eBase && sType == ObsType.Obstacle)
+		{
+			currentNode = map.get(spawnNode.getKey());
+			xPos = spawnNode.xCoord;
+			yPos = spawnNode.yCoord;
+		}
+		else if(topLeftAgent && sBaseEnem && eBaseEnem && nBase && !wBase && !eBase && nType == ObsType.Obstacle)
+		{
+			currentNode = map.get(spawnNode.getKey());
+			xPos = spawnNode.xCoord;
+			yPos = spawnNode.yCoord;
+		}
+	}
+	
+	public void PrintArena()
+	{
+		System.out.println("Agent " + ID);
+		for(int y=9; y>-1; y--)
+		{
+			for(int x=0; x<10; x++)
+			{
+				if(x == xPos && y == yPos)
+					System.out.print("A");
+				else
+				{
+					ObsType t = map.get(new Key(x,y)).type;
+					if(t == ObsType.Obstacle)
+						System.out.print("x");
+					else
+						System.out.print("-");
+				}
+			}
+			System.out.println();
+		}
+		System.out.println();
+	}
+	
+	public int getMove(AgentEnvironment env) 
+	{	
+		if(xPos > 9)
+			xPos = 9;
+		if(xPos < 0)
+			xPos = 0;
+		if(yPos > 9)
+			yPos = 9;
+		if(yPos < 0)
+			yPos = 0;		
+		
+		nType = CheckType(env, 0);
+		sType = CheckType(env, 1);
+		eType = CheckType(env, 2);
+		wType = CheckType(env, 3);
+		
+		nBase = env.isBaseNorth(AgentEnvironment.OUR_TEAM, false);
+		sBase = env.isBaseSouth(AgentEnvironment.OUR_TEAM, false);
+		eBase = env.isBaseEast(AgentEnvironment.OUR_TEAM, false);
+		wBase = env.isBaseWest(AgentEnvironment.OUR_TEAM, false);
+		
+		nBaseEnem = env.isBaseNorth(AgentEnvironment.ENEMY_TEAM, false);
+		sBaseEnem = env.isBaseSouth(AgentEnvironment.ENEMY_TEAM, false);
+		eBaseEnem = env.isBaseEast(AgentEnvironment.ENEMY_TEAM, false);
+		wBaseEnem = env.isBaseWest(AgentEnvironment.ENEMY_TEAM, false);
+		
+		// Initialize the Agent if they havn't been already.
+		if(!initialized)
+			Initialize();
+		
+		// Check if the agent has respawned
+		if(!env.hasFlag())
+			CheckIfRespawned();	
+		
+		int foundFlagDir = UpdateCurrentNode(nType, sType, eType, wType, env.hasFlag());
+		
+		PrintArena();
+		
+		// Let's take our current position.
+		// Go through personalMap and find the best path towards the Enemy Flag
+		// If this agent doesn't have the flag, make goal the enemy flag
+		if(IsDefender())
+		{
+			if(env.hasFlag(AgentEnvironment.ENEMY_TEAM))
+				return GetNextAction(currentNode, enemyBase, false);
+			else
+				return GetNextAction(currentNode, teamBase, true);				
+		}
+		else
+		{
+			// If the agent doens't have the flag, go towards the predicted enemy base
+			if( !env.hasFlag() )
+			{
+				// If we had found the flag earlier, move up to that flag
+				if(foundFlagDir > -1)
+				{
+					switch(foundFlagDir){
+						case AgentAction.MOVE_NORTH:
+							xPos++;
+							break;
+						case AgentAction.MOVE_SOUTH:
+							xPos--;
+							break;
+						case AgentAction.MOVE_EAST:
+							yPos++;
+							break;
+						case AgentAction.MOVE_WEST:
+							yPos--;
+							break;
+					}
+					return foundFlagDir;
+				}
+				else
+					return GetNextAction(currentNode, enemyBase, false);
+			}
+			else
+			{
+				// If we are at our team base, move towards it immediately 
+				//if(foundFlagDir > -1)
+				//	return foundFlagDir;
+				//else
+					return GetNextAction(currentNode, teamBase, true);
+			}
+		}
+	}
+	
+	// A* Search, ideally.
+	// Will start at the Agent's current position
+	// Will search through all available nodes (not null) for a potential path
+	// Once it gets a path, returns the action that will take it to the next node on that path
+	private int GetNextAction(Node root, Node goal, boolean team)
+	{
+		List<Key> expanded = new ArrayList<Key>();
+		Queue<Node> Q = new LinkedList<Node>();
+		
+		root.prevNode = null;
+		Q.add(root);
+		
+		//System.out.println("Root: " + root.XY() + " Goal: " + goal.XY());
+		//System.out.println("TeamBase: " + teamBase.XY() + " Enemy Base: " + enemyBase.XY());			
+		
+		while (!Q.isEmpty())
+		{
+			Node n = Q.peek();
+			Q.remove();
+			
+			//System.out.println("Node: " + n.XY());
+			
+			// We reached the goal, let's go the direction the next node wants us to go in
+			if (n.CompareXY(goal))
+				return ReturnAction(root, n);
+			
+			if(!expanded.contains(n.getKey()))
+			{
+				expanded.add(n.getKey());
+				
+				List<Node> children = new ArrayList<Node>();
+
+				// Go through NSEW children nodes. If any are null or an obstacle, don't add to the list.	
+				Node nNode = map.get(n.GetNSEWKey(0));
+				Node sNode = map.get(n.GetNSEWKey(1));
+				Node eNode = map.get(n.GetNSEWKey(2));
+				Node wNode = map.get(n.GetNSEWKey(3));
+				
+				//System.out.print("N: " + nNode.XY() + " S: " + sNode.XY() + " E: " + eNode.XY() + " W: " + wNode.XY());
+				//System.out.println();
+				
+				if(nNode != null && !expanded.contains(nNode.getKey()) && nNode.type != ObsType.Obstacle && nNode.type != ObsType.Foe)
+				{
+					nNode.prevNode = n;
+					children.add(nNode);
+				}
+				if(sNode != null && !expanded.contains(sNode.getKey()) && sNode.type != ObsType.Obstacle && sNode.type != ObsType.Foe)
+				{
+					sNode.prevNode = n;
+					children.add(sNode);
+				}
+				if(eNode != null && !expanded.contains(eNode.getKey()) && eNode.type != ObsType.Obstacle && eNode.type != ObsType.Foe) 
+				{
+					eNode.prevNode = n;
+					children.add(eNode);
+				}
+				if(wNode != null && !expanded.contains(wNode.getKey()) && wNode.type != ObsType.Obstacle && wNode.type != ObsType.Foe)
+				{
+					wNode.prevNode = n;
+					children.add(wNode);
+				}
+				
+				//children = SortChildren(children, team);
+				
+				for (int i = 0; i < children.size(); i++)
+					Q.add(children.get(i));	
+			}
+		  }
+		
+		//System.out.println("Couldn't find a path yet, clear the map and start over");
+		
+		map.clear();
+		for(int x=-1; x<=10; x++)
+			for(int y=-1; y<=10; y++)
+			{
+				// Border obstacle
+				if(x == -1 || x == 10 || y == -1 || y == 10)
+					map.put(new Key(x,y), new Node(ObsType.Obstacle, x, y));
+				else
+					map.put(new Key(x,y), new Node(ObsType.None, x, y));
+			}
+		
+		return -1;//GetNextAction(root, goal, team);
+	}
+	
+	public int ReturnAction(Node root, Node n)
+	{
+		Node checkNode = n;
+		
+		while (checkNode.prevNode != null)
+		{
+			if(checkNode.prevNode.CompareXY(root))
+				break;
+			
+			checkNode = checkNode.prevNode;
+		}
+		
+		int action = 0;
+		
+		if(map.get(root.GetNSEWKey(0)) == map.get(checkNode.getKey()))
+		{
+			yPos++;
+			action = AgentAction.MOVE_NORTH;
+		}
+		else if(map.get(root.GetNSEWKey(1)) == map.get(checkNode.getKey()))	
+		{
+			yPos--;
+			action = AgentAction.MOVE_SOUTH;
+		}
+		else if(map.get(root.GetNSEWKey(2)) == map.get(checkNode.getKey()))
+		{
+			xPos++;
+			action = AgentAction.MOVE_EAST;
+		}
+		else if(map.get(root.GetNSEWKey(3)) == map.get(checkNode.getKey()))
+		{
+			xPos--;
+			action = AgentAction.MOVE_WEST;
+		}
+		else
+		{
+			action = AgentAction.DO_NOTHING;
+		}
+		
+		//System.out.println(action);
+		return action;
+	}
+	
+	public List<Node> SortChildren(List<Node> l, boolean asc)
+	{
+		List<Node> list = l;
+
+		Node min;
+
+		for (int x=0; x < list.size(); x++)
+		{
+			min = list.get(x);
+			int loc = x;
+			for (int k = x + 1; k < list.size(); k++) 
+			{
+				if (asc && min.value > list.get(k).value) 
+				{
+					min = list.get(k);
+					loc = k;
+				}
+				else if (!asc && min.value < list.get(k).value) 
+				{
+					min = list.get(k);
+					loc = k;
+				}
+			}
+			
+			Node temp, temp2;
+	    	temp = list.get(x);
+	    	temp2 = list.get(loc);
+    		list.remove(x);
+    		list.add(x, temp2);
+    		list.remove(loc);
+    		list.add(loc, temp);
+		}
+		
+		return list;
+	}
+	
+	private int OldAlgorithm(AgentEnvironment env)
+	{
+		// now we have direction booleans for our goal	
+		// check for immediate obstacles blocking our path		
+		boolean obstNorth = env.isObstacleNorthImmediate();
+		boolean obstSouth = env.isObstacleSouthImmediate();
+		boolean obstEast = env.isObstacleEastImmediate();
+		boolean obstWest = env.isObstacleWestImmediate();
+		
+		// booleans describing direction of goal
+		// goal is either enemy flag, or our base
+		boolean goalNorth, goalSouth, goalEast, goalWest;
+		
+		int action = -1;
+		
+		// If this agent doesn't have the flag, make goal the enemy flag
+		if( !env.hasFlag() ) 
+		{
+			goalNorth = env.isFlagNorth( AgentEnvironment.ENEMY_TEAM, false );
+			goalSouth = env.isFlagSouth( AgentEnvironment.ENEMY_TEAM, false );
+			goalEast = env.isFlagEast( AgentEnvironment.ENEMY_TEAM, false );
+			goalWest = env.isFlagWest( AgentEnvironment.ENEMY_TEAM, false );
+		}
+		
+		// Otherwise we have the enemy flag, make a beeline for our base
+		else 
+		{
+			goalNorth = env.isBaseNorth( AgentEnvironment.OUR_TEAM, false );
+			goalSouth = env.isBaseSouth( AgentEnvironment.OUR_TEAM, false );
+			goalEast = env.isBaseEast( AgentEnvironment.OUR_TEAM, false );
+			goalWest = env.isBaseWest( AgentEnvironment.OUR_TEAM, false );
+		}
+		
+		// if the goal is north only, and we're not blocked
+		// move north
+		if( goalNorth && ! goalEast && ! goalWest && !obstNorth )
+			return action = AgentAction.MOVE_NORTH;
+			
+		// if goal both north and east
+		if( goalNorth && goalEast ) {
+			// pick north or east for move with 50/50 chance
+			if( Math.random() < 0.5 && !obstNorth )
+				return action = AgentAction.MOVE_NORTH;
+			if( !obstEast )
+				return action = AgentAction.MOVE_EAST;
+			if( !obstNorth )
+				return action = AgentAction.MOVE_NORTH;
+			}	
+			
+		// if goal both north and west	
+		if( goalNorth && goalWest ) {
+			// pick north or west for move with 50/50 chance
+			if( Math.random() < 0.5 && !obstNorth ) 
+				return action = AgentAction.MOVE_NORTH;
+			if( !obstWest )
+				return action = AgentAction.MOVE_WEST;
+			if( !obstNorth )
+				return action = AgentAction.MOVE_NORTH;
+			}
+		
+		// if the goal is south only, and we're not blocked
+		// move south
+		if( goalSouth && ! goalEast && ! goalWest && !obstSouth )
+			return action = AgentAction.MOVE_SOUTH;
+		
+		// do same for southeast and southwest as for north versions	
+		if( goalSouth && goalEast ) {
+			if( Math.random() < 0.5 && !obstSouth )
+				return action = AgentAction.MOVE_SOUTH;
+			if( !obstEast ) 
+				return action = AgentAction.MOVE_EAST;
+			if( !obstSouth )
+				return action = AgentAction.MOVE_SOUTH;
+		}
+				
+		if( goalSouth && goalWest && !obstSouth ) {
+			if( Math.random() < 0.5 )
+				return action = AgentAction.MOVE_SOUTH;
+			if( !obstWest )
+				return action = AgentAction.MOVE_WEST;
+			if( !obstSouth )
+				return action = AgentAction.MOVE_SOUTH;
+		}
+		
+		// if the goal is east only, and we're not blocked
+		if( goalEast && !obstEast )
+			return action = AgentAction.MOVE_EAST;
+			
+		// if the goal is west only, and we're not blocked	
+		if( goalWest && !obstWest )
+			return action = AgentAction.MOVE_WEST;
+		
+		// otherwise, make any unblocked move
+		if( !obstNorth )
+			return action = AgentAction.MOVE_NORTH;
+		else if( !obstSouth )
+			return action = AgentAction.MOVE_SOUTH;
+		else if( !obstEast )
+			return action = AgentAction.MOVE_EAST;
+		else if( !obstWest )
+			return action = AgentAction.MOVE_WEST;
+		// completely blocked!
+		else
+			return action = AgentAction.DO_NOTHING;	
+	}
+	
+	private int UpdateCurrentNode(ObsType n, ObsType s, ObsType e, ObsType w, boolean hasFlag)
+	{	
+		currentNode = map.get(new Key(xPos, yPos));
+		
+		Node nNode = map.get(new Key(xPos, yPos+1));
+		Node sNode = map.get(new Key(xPos, yPos-1));	
+		Node eNode = map.get(new Key(xPos+1, yPos));	
+		Node wNode = map.get(new Key(xPos-1, yPos));	
+		
+		// Automatically sets the value of the node to -1000 if it's an obstacle, enemy, or null
+		if(nNode == null)
+			nNode = new Node(n, xPos, yPos+1, enemyBase.Distance(xPos, yPos+1));
+		else if(nNode.type != ObsType.Obstacle)
+			nNode.type = n;
+		
+		if(sNode == null)
+			sNode = new Node(s, xPos, yPos-1, enemyBase.Distance(xPos, yPos-1));	
+		else if(sNode.type != ObsType.Obstacle)
+			sNode.type = s;
+		
+		if(eNode == null)
+			eNode = new Node(e, xPos+1, yPos, enemyBase.Distance(xPos+1, yPos));
+		else if(eNode.type != ObsType.Obstacle)
+			eNode.type = e;
+		
+		if(wNode == null)
+			wNode = new Node(w, xPos-1, yPos, enemyBase.Distance(xPos-1, yPos));
+		else if(wNode.type != ObsType.Obstacle)
+			wNode.type = w;
+		
+		map.put(currentNode.getKey(), currentNode);
+		map.put(nNode.getKey(), nNode);
+		map.put(sNode.getKey(), sNode);
+		map.put(eNode.getKey(), eNode);
+		map.put(wNode.getKey(), wNode);
+		
+		// If the agent doesn't have the flag, return if the enemy flag/base is within reach
+		if(!hasFlag)
+		{
+			if(nNode.type == ObsType.EnemFlag || nNode.type == ObsType.EnemBase)
+				return AgentAction.MOVE_NORTH;
+			if(sNode.type == ObsType.EnemFlag || sNode.type == ObsType.EnemBase)
+				return AgentAction.MOVE_SOUTH;
+			if(eNode.type == ObsType.EnemFlag || eNode.type == ObsType.EnemBase)
+				return AgentAction.MOVE_EAST;
+			if(wNode.type == ObsType.EnemFlag || wNode.type == ObsType.EnemBase)
+				return AgentAction.MOVE_WEST;
+			else
+				return -100;			
+		}
+		// Otherwise, if we do have the flag, return if our own base is within reach
+		else
+		{
+			if(nNode.type == ObsType.TeamFlag || nNode.type == ObsType.TeamBase)
+				return AgentAction.MOVE_NORTH;
+			if(sNode.type == ObsType.TeamFlag || sNode.type == ObsType.TeamBase)
+				return AgentAction.MOVE_SOUTH;
+			if(eNode.type == ObsType.TeamFlag || eNode.type == ObsType.TeamBase)
+				return AgentAction.MOVE_EAST;
+			if(wNode.type == ObsType.TeamFlag || wNode.type == ObsType.TeamBase)
+				return AgentAction.MOVE_WEST;
+			else
+				return -100;			
+		}
+		//System.out.println("North node type: " + n);
+		//System.out.println("South node type: " + s);
+		//System.out.println("East node type: " + e);
+		//System.out.println("West node type: " + w);
+	}
+	
+	// Adds a node at a given IMMEDIATE X,Y coordinate.
+	// NSEW tells us in what direction relative to the Agent the node we're checking is
+	private ObsType CheckType(AgentEnvironment env, int NSEW)
+	{
+		if(checkAgentAdjacent(env, NSEW, false))
+			return ObsType.Friend;
+		if(checkAgentAdjacent(env, NSEW, true))
+			return ObsType.Foe;
+		
+		if(checkFlagAdjacent(env, NSEW, false))
+			return ObsType.TeamFlag;
+		if(checkFlagAdjacent(env, NSEW, true))
+			return ObsType.EnemFlag;
+		
+		if(checkBaseAdjacent(env, NSEW, false))
+			return ObsType.TeamBase;
+		if(checkBaseAdjacent(env, NSEW, true))
+			return ObsType.EnemBase;
+		
+		if(checkObsAdjacent(env, NSEW))
+			return ObsType.Obstacle;
+
+		return ObsType.None;
+	}
+	
+	// Checks if there is an Agent adjacent to the environment
+	private boolean checkAgentAdjacent(AgentEnvironment e, int NSEW, boolean enemTeam)
+	{
+		if(enemTeam){
+			switch(NSEW){
+				case 0:
+					return e.isAgentNorth(AgentEnvironment.ENEMY_TEAM, true);
+				case 1:
+					return e.isAgentSouth(AgentEnvironment.ENEMY_TEAM, true);
+				case 2:
+					return e.isAgentEast(AgentEnvironment.ENEMY_TEAM,  true);
+				case 3:
+					return e.isAgentWest(AgentEnvironment.ENEMY_TEAM, true);
+			}
+		}
+		else{
+			switch(NSEW){
+				case 0:
+					return e.isAgentNorth(AgentEnvironment.OUR_TEAM, true);
+				case 1:
+					return e.isAgentSouth(AgentEnvironment.OUR_TEAM, true);
+				case 2:
+					return e.isAgentEast(AgentEnvironment.OUR_TEAM,  true);
+				case 3:
+					return e.isAgentWest(AgentEnvironment.OUR_TEAM, true);
+			}	
+		}
+		return enemTeam;
+	}
+	
+
+	// Checks if there is a Flag adjacent to the Agent entity
+	private boolean checkFlagAdjacent(AgentEnvironment e, int NSEW, boolean enemTeam)
+	{
+		if(enemTeam){
+			switch(NSEW){
+				case 0:
+					return e.isFlagNorth(AgentEnvironment.ENEMY_TEAM, true);
+				case 1:
+					return e.isFlagSouth(AgentEnvironment.ENEMY_TEAM, true);
+				case 2:
+					return e.isFlagEast(AgentEnvironment.ENEMY_TEAM,  true);
+				case 3:
+					return e.isFlagWest(AgentEnvironment.ENEMY_TEAM, true);
+			}
+		}
+		else{
+			switch(NSEW){
+				case 0:
+					return e.isFlagNorth(AgentEnvironment.OUR_TEAM, true);
+				case 1:
+					return e.isFlagSouth(AgentEnvironment.OUR_TEAM, true);
+				case 2:
+					return e.isFlagEast(AgentEnvironment.OUR_TEAM,  true);
+				case 3:
+					return e.isFlagWest(AgentEnvironment.OUR_TEAM, true);
+			}	
+		}
+		return false;
+	}
+
+	// Checks if there is an obstacle directly adjacent to the Agent
+	private boolean checkObsAdjacent(AgentEnvironment e, int NSEW)
+	{
+		switch(NSEW){
+			case 0:
+				return e.isObstacleNorthImmediate();
+			case 1:
+				return  e.isObstacleSouthImmediate();
+			case 2:
+				return e.isObstacleEastImmediate();
+			case 3:
+				return e.isObstacleWestImmediate();
+		}
+		return false;
+	}
+
+	private boolean checkBaseAdjacent(AgentEnvironment e, int NSEW, boolean enemTeam)
+	{
+		if(enemTeam){
+			switch(NSEW){
+				case 0:
+					return e.isBaseNorth(AgentEnvironment.ENEMY_TEAM, true);
+				case 1:
+					return e.isBaseSouth(AgentEnvironment.ENEMY_TEAM, true);
+				case 2:
+					return e.isBaseEast(AgentEnvironment.ENEMY_TEAM,  true);
+				case 3:
+					return e.isBaseWest(AgentEnvironment.ENEMY_TEAM, true);
+			}
+		}
+		else{
+			switch(NSEW){
+				case 0:
+					return e.isBaseNorth(AgentEnvironment.OUR_TEAM, true);
+				case 1:
+					return e.isBaseSouth(AgentEnvironment.OUR_TEAM, true);
+				case 2:
+					return e.isBaseEast(AgentEnvironment.OUR_TEAM,  true);
+				case 3:
+					return e.isBaseWest(AgentEnvironment.OUR_TEAM, true);
+			}	
+		}
+		return enemTeam;
+	}
+}

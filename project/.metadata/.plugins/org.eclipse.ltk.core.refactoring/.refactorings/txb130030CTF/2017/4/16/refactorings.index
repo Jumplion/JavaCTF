@@ -8,3 +8,6 @@
 1492479944114	Rename local variable 'inEnvironment'
 1492479979929	Rename method 'checkNodeImmediate'
 1492553945947	Rename method 'checkNode'
+1492802034246	Rename field 'map'
+1492823926900	Rename local variable 'enviro'
+1492823942223	Rename local variable 'inEnvironment'
