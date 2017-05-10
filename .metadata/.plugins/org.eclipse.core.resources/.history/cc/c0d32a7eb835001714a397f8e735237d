@@ -422,28 +422,8 @@ public class txb130030Agent extends Agent
 				else
 					return GetNextAction(currentNode, enemyBase);
 			}
-			else{
-				// If we had found the flag earlier, move up to that flag
-				if(foundFlagDir > -1)
-				{
-					switch(foundFlagDir){
-						case AgentAction.MOVE_NORTH:
-							xPos++;
-							break;
-						case AgentAction.MOVE_SOUTH:
-							xPos--;
-							break;
-						case AgentAction.MOVE_EAST:
-							yPos++;
-							break;
-						case AgentAction.MOVE_WEST:
-							yPos--;
-							break;
-					}
-					return foundFlagDir;
-				}
+			else
 				return GetNextAction(currentNode, teamBase);
-			}
 		}
 	}
 	
