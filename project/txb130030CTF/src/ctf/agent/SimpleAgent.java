@@ -35,31 +35,31 @@ public class SimpleAgent extends Agent {
 		if( !inEnvironment.hasFlag() ) {
 			// make goal the enemy flag
 			goalNorth = inEnvironment.isFlagNorth( 
-				inEnvironment.ENEMY_TEAM, false );
+				AgentEnvironment.ENEMY_TEAM, false );
 		
 			goalSouth = inEnvironment.isFlagSouth( 
-				inEnvironment.ENEMY_TEAM, false );
+				AgentEnvironment.ENEMY_TEAM, false );
 		
 			goalEast = inEnvironment.isFlagEast( 
-				inEnvironment.ENEMY_TEAM, false );
+				AgentEnvironment.ENEMY_TEAM, false );
 		
 			goalWest = inEnvironment.isFlagWest( 
-				inEnvironment.ENEMY_TEAM, false );
+				AgentEnvironment.ENEMY_TEAM, false );
 			}
 		else {
 			// we have enemy flag.
 			// make goal our base
 			goalNorth = inEnvironment.isBaseNorth( 
-				inEnvironment.OUR_TEAM, false );
+				AgentEnvironment.OUR_TEAM, false );
 		
 			goalSouth = inEnvironment.isBaseSouth( 
-				inEnvironment.OUR_TEAM, false );
+				AgentEnvironment.OUR_TEAM, false );
 		
 			goalEast = inEnvironment.isBaseEast( 
-				inEnvironment.OUR_TEAM, false );
+				AgentEnvironment.OUR_TEAM, false );
 		
 			goalWest = inEnvironment.isBaseWest( 
-				inEnvironment.OUR_TEAM, false );
+				AgentEnvironment.OUR_TEAM, false );
 			}
 		
 		// now we have direction booleans for our goal	

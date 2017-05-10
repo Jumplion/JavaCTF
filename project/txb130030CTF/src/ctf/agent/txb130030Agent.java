@@ -1,9 +1,47 @@
+/*
+ * Tomer Braff
+ * May 10, 2017
+ * txb130030Agent
+ *
+ * This is the code for my own Agent for an AI class project.
+ * An applet runs that displays an NxN sized arena where two teams, Red and Green, are placed
+ * on opposite sides of eachother. Each team has a team base and a team flag on the far left/right
+ * sides of the arena. Agents can only do certain actions: Move North, South, East, West, Place a Bomb, or do Nothing. 
+
+ * The agents must interface with code that was provided to me in the class. All the code in this file
+ * was created with those limitations, which were the following:
+ *
+ * LIMITATIONS 
+ * 
+ * 		Agents can only see what is directly north, south, east, and west of their current position.
+ *		AgentEnvironment provided functions to see what is directly north/south/east/west (NSEW) of the agent's
+ *			current position, as well as if an enemy/base/friend/etc... was in the general NSEW direction.
+ *		AgentAction is a class that provides the integer representations of certain actions an Agent can take
+ *			As limited by the environment, an Agent can only do one of these moves: Move NSEW, Plant a Bomb, or do nothing
+ *		Agents do not know their locations and cannot access the arena except by AgentEnvironment functions.
+ *
+ *	Because of these limitations and more, I had to create several methods of having the Agents know where they are
+ *  in the map, whether they've respawned, what general direction they should go in, etc...
+ *
+ * Comments in the code should provide insight as to what I needed to create for the Agents and how it is used.
+ *
+ * The main portion of code is that to figure out which direction to go in next. As the Agent moves around
+ * the environment they build up a 10x10 map and take note of which nodes are obstacles, enemies, etc...
+ * Then the Agent takes their current position and uses the A* search algorithm to find a path to the enemy or
+ * team base (depending on if they have the flag or not) and they go in that direction.
+ * 		
+ *
+*/
+
 package ctf.agent;
 
 import java.util.*;
 import ctf.common.*;
 
-enum ObsType{
+// Enum of the various types of obstacles that can occur in the environment.
+// The Nodes on the map the agents use all indicate what type of Node they are
+enum ObsType
+{
 	Null(-1), None(0), Obstacle(1), Friend(2), Foe(3), TeamFlag(4), EnemFlag(5), TeamBase(6), EnemBase(7);
 	private int value;
 	private ObsType(int val){
@@ -11,7 +49,16 @@ enum ObsType{
 	}
 }
 
-class Key {
+// A Wrapper Key Object
+// Source: 
+//		https://stackoverflow.com/questions/14677993/how-to-create-a-hashmap-with-two-keys-key-pair-value
+// For the HashMap that contains X and Y coordinates since HashMaps can't contain two keys for a value.
+// This way I can just do Map<Key, Node> and to get a specific value I do map.get(new Key(x,y)) instead 
+// of doing a roundabout, convoluted way of, say, having a Map with they Key being the X coordinate
+// and a value of another Map has a Key being the Y value with a value of the environment state.
+// ( Map<int xCoordinate, Map<int yCoordinate>> )
+class Key 
+{
 	private final int x;
 	private final int y;
 	
@@ -20,6 +67,7 @@ class Key {
 		this.y = y;
 	}
 	
+
 	@Override
 	public boolean equals(Object o) {
 		if (this == o) return true;
@@ -36,19 +84,18 @@ class Key {
 	}
 }
 
-class Node{	
-	public double value = -1;
+// Class that populates the map
+// 
+class Node
+{	
+
+	public double value = -1;				// Heuristic value for nodes in A* search
+	public Node prevNode = null;			// Used to keep track of the path back to the root node when searching
+	public ObsType type = ObsType.Null;		// The type of obstacle this node is (none, obstacle, team base, etc...)
+	public int xCoord = -10000;				// X Coordinate of the Node in the map
+	public int yCoord = -10000;				// Y Coordinate of the Node in the map
 	
-	public Node prevNode = null;
-	
-	public boolean flagNorth, flagSouth, flagEast, flagWest;
-	public boolean baseNorth, baseSouth, baseEast, baseWest;
-	
-	public ObsType type = ObsType.Null;
-	
-	public int xCoord = -10000;
-	public int yCoord = -10000;
-	
+	// Constructors
 	Node()
 	{
 		type = ObsType.Null;
@@ -57,39 +104,44 @@ class Node{
 	Node(ObsType t, int x, int y)
 	{
 		type = t;
-		xCoord = x;
-		yCoord = y;
+		SetXY(x,y);
 	}
 	
 	Node(ObsType t, int x, int y, double val)
 	{
 		type = t;
-		xCoord = x;
-		yCoord = y;
+		SetXY(x,y);
 		value = val;
 	}
 	
+	// Sets the X and Y coordinates
 	public void SetXY(int x, int y)
 	{
 		xCoord = x;
 		yCoord = y;
 	}
 
+	// Compares the X,Y coordinate values of this node to the pass node
 	public boolean CompareXY(Node n)
 	{
 		return (xCoord == n.xCoord && yCoord == n.yCoord);
 	}
 	
+	// Creates a string representation of the X and Y coordinates
 	public String XY()
 	{
 		return "X: " + xCoord + ", Y: " + yCoord;
 	}
 	
+	// Returns a Key object created from the Node's X,Y coordinates
 	public Key getKey()
 	{
 		return new Key(xCoord, yCoord);
 	}
 	
+	// Gets the Node that is North/South/East/West from the this Node
+	// NSEW goes - 0:North, 1:South, 2:East, 3:West
+	// Possibly could be easier with an enum for NSEW?
 	public Key GetNSEWKey(int NSEW)
 	{
 		switch(NSEW){
@@ -106,6 +158,7 @@ class Node{
 		return new Key(xCoord, yCoord+1);
 	}
 	
+	// Distance formulas to certain nodes, mostly used to determine value heuristic
 	public double Distance(Node other)
 	{
 		return Math.sqrt(Math.pow(other.xCoord - xCoord, 2) - Math.pow(other.yCoord - yCoord, 2));
@@ -117,33 +170,36 @@ class Node{
 	}
 }
 
-
+// Main Agent code
 public class txb130030Agent extends Agent 
 {	
-	int xPos = 0, yPos = 0;
+	// A static HashMap that all txb130030Agent's have access to
+	// This map contains Nodes with a Key (from the Key class) as a key value (new Key(x,y)).
+	// The map is updated continually as Agents traverse the environment, making note of which
+	// nodes are obstacles and which nodes aren't.
+	public static Map<Key, Node> map = new HashMap<Key, Node>();		
+
+	// The X and Y positions the Agent is currently in
+	int xPos = 0, yPos = 0;	
+
+	// The Nodes that contain the Enemy/Team bases respectively
+	public static Node enemyBase = null, teamBase = null;
+
+	// The current node the Agent is on as well as the initial node they spawned at
+	Node currentNode = null, spawnNode = null;
+
+	// If the Agent first spawned at the top left/right or bottom left/right corner of the arena
+	public boolean botLeftAgent = false,  botRightAgent = false, topLeftAgent = false, topRightAgent = false;
 	
-	// Fuck it, will just make it a 10,10 grid
-	public static Map<Key, Node> map = new HashMap<Key, Node>();
-	
-	public Node enemyBase = null, teamBase = null;
-	Node currentNode = null;
-	Node previousNode = null;
-	Node spawnNode = null;
-	
+	// Obstacle Types of NSEW, as well as if the team/enemy bases are NSEW of the Agent	
 	ObsType nType, sType, eType, wType;
-	boolean nFlag, sFlag, eFlag, wFlag;
 	boolean nBase, sBase, eBase, wBase;
 	boolean nBaseEnem, sBaseEnem, eBaseEnem, wBaseEnem;
 
-	public boolean botLeftAgent = false;
-	public boolean botRightAgent = false;
-	public boolean topLeftAgent = false;
-	public boolean topRightAgent = false;
-	
-	public boolean teamLeft = false;
-	
 	public int ID = 0;
 	public static int numAgents = 0;
+
+	// Couldn't use constructors like I wanted to, had to use a boolean flag to indicate if the Agent was created yet
 	public boolean initialized = false;
 	
 	public static List<Agent> agents = new ArrayList<Agent>();
@@ -153,6 +209,7 @@ public class txb130030Agent extends Agent
 		return ID == 0;
 	}
 	
+	// Couldn't use a constructor for the project, so I used a boolean to switch off when initialized
 	public void Initialize()
 	{
 		initialized = true;
@@ -160,12 +217,13 @@ public class txb130030Agent extends Agent
 		ID = numAgents;
 		numAgents++;
 		
+		// Determines if an agent will go for the enemy flag or "defend" the team base
 		if(numAgents % 2 != 0)
 			map.clear();
 		
 		agents.add(this);
 		
-		// Initialize a 10x10 map for now
+		// Initialize a 10x10 map
 		if(map.isEmpty())
 			for(int x=-1; x<=10; x++)
 				for(int y=-1; y<=10; y++)
@@ -178,12 +236,14 @@ public class txb130030Agent extends Agent
 				}
 		
 		// If this Agent started in the bottom/top corner on the left/right side
+		// This is done by seeing if the enemy base is either North or South of the agent, and either East or West of the agent
+		
 		if(nBaseEnem && wBaseEnem)
 		{
+			botRightAgent = true;
 			currentNode = spawnNode = map.get(new Key(9,0));
 			xPos = 9;
 			yPos = 0;
-			botRightAgent = true;
 			
 			map.get(new Key(9,4)).type = ObsType.TeamBase;
 			map.get(new Key(0,4)).type = ObsType.EnemBase;
@@ -193,8 +253,8 @@ public class txb130030Agent extends Agent
 		}
 		else if(sBaseEnem && wBaseEnem)
 		{
-			currentNode = spawnNode = map.get(new Key(9,9));
 			topRightAgent = true;
+			currentNode = spawnNode = map.get(new Key(9,9));
 			xPos = 9;
 			yPos = 9;			
 
@@ -206,8 +266,9 @@ public class txb130030Agent extends Agent
 		}
 		else if(nBaseEnem && eBaseEnem)
 		{
-			currentNode = spawnNode = map.get(new Key(0,0));
 			botLeftAgent = true;
+			currentNode = spawnNode = map.get(new Key(0,0));
+
 			xPos = 0;
 			yPos = 0;
 			
@@ -219,8 +280,8 @@ public class txb130030Agent extends Agent
 		}
 		else
 		{
-			currentNode = spawnNode = map.get(new Key(0,9));
 			topLeftAgent = true;
+			currentNode = spawnNode = map.get(new Key(0,9));
 			xPos = 0;
 			yPos = 9;
 			
@@ -231,17 +292,31 @@ public class txb130030Agent extends Agent
 			enemyBase = map.get(new Key(9,4));
 		}
 		
-		// Create values for the nodes
+		// Create heuristic values for the nodes
 		for(int x=0; x<9; x++)
 			for(int y=0; y<9; y++)
 				map.get(new Key(x,y)).value = enemyBase.Distance(map.get(new Key(x,y)));	
 	}
 	
+	// Check if the Agent has respawned to its original location
+	// This is needed because if an Agent contacts an enemy they are repositioned, not reinstantiated.
+	// Therefore, the Agent needs to check if it is in the same state as it's original spawning position
 	public void CheckIfRespawned()
 	{
 		// If the base is directly north/south of the agent
 		// Reset the currentNode to be the agent's spawn node
 		
+		// Each statement asks if the agent is a top right/left or bottom right/left agent.
+		// Then it checks if the situation now is the same as if it had spawned.
+		// For example, if the Agent initially spawned at the bottom right corner, then we
+		// need to check if the enemy base is NorthEast of the Agent, AND we need the team
+		// base to be DIRECTLY North of the agent and NEITHER East or West of the Agent.
+		// We also check if the Southern Node is an obstacle as that determines if it is a corner.
+		// (No obstacles can be on the far east/west sides of the arena, and when we initialized the map
+		// we made the outside borders impenetrable obstacles)
+
+		// If all of that is true, then the Agent has respawned, so let's do what we need to do.
+
 		if(botRightAgent && nBaseEnem && wBaseEnem && nBase && !wBase && !eBase && sType == ObsType.Obstacle)
 		{
 			currentNode = map.get(spawnNode.getKey());
@@ -268,31 +343,9 @@ public class txb130030Agent extends Agent
 		}
 	}
 	
-	public void PrintArena()
-	{
-		//System.out.println("Agent " + ID);
-		for(int y=9; y>-1; y--)
-		{
-			for(int x=0; x<10; x++)
-			{
-				if(x == xPos && y == yPos)
-					System.out.print("A");
-				else
-				{
-					ObsType t = map.get(new Key(x,y)).type;
-					if(t == ObsType.Obstacle)
-						System.out.print("x");
-					else
-						System.out.print("-");
-				}
-			}
-			System.out.println();
-		}
-		System.out.println();
-	}
-	
 	public int getMove(AgentEnvironment env) 
 	{	
+		// Clamp the X and Y positions of the Agent
 		if(xPos > 9)
 			xPos = 9;
 		if(xPos < 0)
@@ -301,23 +354,26 @@ public class txb130030Agent extends Agent
 			yPos = 9;
 		if(yPos < 0)
 			yPos = 0;		
-		
+
+		// Check the obstacle types of the NSEW nodes
 		nType = CheckType(env, 0);
 		sType = CheckType(env, 1);
 		eType = CheckType(env, 2);
 		wType = CheckType(env, 3);
 		
+		// Check if the team base is in the general NSEW direction of the Agent
 		nBase = env.isBaseNorth(AgentEnvironment.OUR_TEAM, false);
 		sBase = env.isBaseSouth(AgentEnvironment.OUR_TEAM, false);
 		eBase = env.isBaseEast(AgentEnvironment.OUR_TEAM, false);
 		wBase = env.isBaseWest(AgentEnvironment.OUR_TEAM, false);
 		
+		// Check if the Enemy base is in the general NSEW direction of the Agent
 		nBaseEnem = env.isBaseNorth(AgentEnvironment.ENEMY_TEAM, false);
 		sBaseEnem = env.isBaseSouth(AgentEnvironment.ENEMY_TEAM, false);
 		eBaseEnem = env.isBaseEast(AgentEnvironment.ENEMY_TEAM, false);
 		wBaseEnem = env.isBaseWest(AgentEnvironment.ENEMY_TEAM, false);
 		
-		// Initialize the Agent if they havn't been already.
+		// Initialize the Agent if they haven't been already.
 		if(!initialized)
 			Initialize();
 		
@@ -325,23 +381,23 @@ public class txb130030Agent extends Agent
 		if(!env.hasFlag())
 			CheckIfRespawned();	
 		
+		// Checks if the team/enemy flag (depending on the situation) is directly NSEW of the Agent
+		// This is so we don't go through all the searching just for a simple direction
 		int foundFlagDir = UpdateCurrentNode(nType, sType, eType, wType, env.hasFlag());
 		
-		//PrintArena();
-		
-		// Let's take our current position.
-		// Go through personalMap and find the best path towards the Enemy Flag
-		// If this agent doesn't have the flag, make goal the enemy flag
+		// Is this agent a "defender"? If not, just do the normal algorithm
 		if(IsDefender())
 		{
+			// If the enemy team has our flag, go towards the enemy base
+			// Otherwise, just go to the team base
 			if(env.hasFlag(AgentEnvironment.ENEMY_TEAM))
-				return GetNextAction(currentNode, enemyBase, false);
+				return GetNextAction(currentNode, enemyBase);
 			else
-				return GetNextAction(currentNode, teamBase, true);				
+				return GetNextAction(currentNode, teamBase);				
 		}
 		else
 		{
-			// If the agent doens't have the flag, go towards the predicted enemy base
+			// If the agent doesn't have the flag, go towards the predicted enemy base
 			if( !env.hasFlag() )
 			{
 				// If we had found the flag earlier, move up to that flag
@@ -364,59 +420,48 @@ public class txb130030Agent extends Agent
 					return foundFlagDir;
 				}
 				else
-					return GetNextAction(currentNode, enemyBase, false);
+					return GetNextAction(currentNode, enemyBase);
 			}
 			else
-			{
-				// If we are at our team base, move towards it immediately 
-				//if(foundFlagDir > -1)
-				//	return foundFlagDir;
-				//else
-					return GetNextAction(currentNode, teamBase, true);
-			}
+				return GetNextAction(currentNode, teamBase);
 		}
 	}
 	
-	// A* Search, ideally.
-	// Will start at the Agent's current position
-	// Will search through all available nodes (not null) for a potential path
+	// A* Search
+	// Will start at the root, search through  the nodes for a potential path to the goal
 	// Once it gets a path, returns the action that will take it to the next node on that path
-	private int GetNextAction(Node root, Node goal, boolean team)
+	private int GetNextAction(Node root, Node goal)
 	{
+		// Keep track of the nodes we've already been to
 		List<Key> expanded = new ArrayList<Key>();
 		Queue<Node> Q = new LinkedList<Node>();
 		
 		root.prevNode = null;
 		Q.add(root);
 		
-		//System.out.println("Root: " + root.XY() + " Goal: " + goal.XY());
-		//System.out.println("TeamBase: " + teamBase.XY() + " Enemy Base: " + enemyBase.XY());			
-		
+		// So long as the Queue is not empty, keep searching
 		while (!Q.isEmpty())
 		{
+			// Take the next node in the queue
 			Node n = Q.peek();
 			Q.remove();
-			
-			//System.out.println("Node: " + n.XY());
-			
-			// We reached the goal, let's go the direction the next node wants us to go in
+
+			// Have we reached the goal? Let's go the direction the next node wants us to go in
 			if (n.CompareXY(goal))
 				return ReturnAction(root, n);
 			
+			// Otherwise, have we already visited this node? Don't bother if we have
 			if(!expanded.contains(n.getKey()))
 			{
 				expanded.add(n.getKey());
 				
 				List<Node> children = new ArrayList<Node>();
 
-				// Go through NSEW children nodes. If any are null or an obstacle, don't add to the list.	
+				// Go through NSEW children nodes. If a node is null, an obstacle, or an Enemy, don't add to the list.	
 				Node nNode = map.get(n.GetNSEWKey(0));
 				Node sNode = map.get(n.GetNSEWKey(1));
 				Node eNode = map.get(n.GetNSEWKey(2));
 				Node wNode = map.get(n.GetNSEWKey(3));
-				
-				//System.out.print("N: " + nNode.XY() + " S: " + sNode.XY() + " E: " + eNode.XY() + " W: " + wNode.XY());
-				//System.out.println();
 				
 				if(nNode != null && !expanded.contains(nNode.getKey()) && nNode.type != ObsType.Obstacle && nNode.type != ObsType.Foe)
 				{
@@ -441,13 +486,15 @@ public class txb130030Agent extends Agent
 				
 				//children = SortChildren(children, team);
 				
+				// Add the children to the queue if there are any
 				for (int i = 0; i < children.size(); i++)
 					Q.add(children.get(i));	
 			}
 		  }
 		
-		//System.out.println("Couldn't find a path yet, clear the map and start over");
-		
+		// If we went through all of that and somehow didn't find a path, then something is wrong with the map
+		// An agent probably listed a node as an obstacle by mistake, blocking off half of the map
+		// Let's clear the map and reinitialize it. Not the most ideal way, but it works
 		map.clear();
 		for(int x=-1; x<=10; x++)
 			for(int y=-1; y<=10; y++)
@@ -459,13 +506,16 @@ public class txb130030Agent extends Agent
 					map.put(new Key(x,y), new Node(ObsType.None, x, y));
 			}
 		
-		return -1;//GetNextAction(root, goal, team);
+		return -1;
 	}
 	
+	// Return the integer value of the next action we should take
 	public int ReturnAction(Node root, Node n)
 	{
 		Node checkNode = n;
 		
+		// Go up the node's prevNode values until it hits the root node.
+		// This will let us see what the next direction should be
 		while (checkNode.prevNode != null)
 		{
 			if(checkNode.prevNode.CompareXY(root))
@@ -475,6 +525,9 @@ public class txb130030Agent extends Agent
 		}
 		
 		int action = 0;
+		
+		// Check this next node with the root's NSEW nodes and see which direction it should go.
+		// Probably could be done so that the nodes keep track of which direction the prevNode came from.
 		
 		if(map.get(root.GetNSEWKey(0)) == map.get(checkNode.getKey()))
 		{
@@ -497,14 +550,12 @@ public class txb130030Agent extends Agent
 			action = AgentAction.MOVE_WEST;
 		}
 		else
-		{
 			action = AgentAction.DO_NOTHING;
-		}
 		
-		//System.out.println(action);
 		return action;
 	}
 	
+	// Sorts the nodes from least to greaatest depending on the passed boolean
 	public List<Node> SortChildren(List<Node> l, boolean asc)
 	{
 		List<Node> list = l;
@@ -541,112 +592,8 @@ public class txb130030Agent extends Agent
 		return list;
 	}
 	
-	private int OldAlgorithm(AgentEnvironment env)
-	{
-		// now we have direction booleans for our goal	
-		// check for immediate obstacles blocking our path		
-		boolean obstNorth = env.isObstacleNorthImmediate();
-		boolean obstSouth = env.isObstacleSouthImmediate();
-		boolean obstEast = env.isObstacleEastImmediate();
-		boolean obstWest = env.isObstacleWestImmediate();
-		
-		// booleans describing direction of goal
-		// goal is either enemy flag, or our base
-		boolean goalNorth, goalSouth, goalEast, goalWest;
-		
-		int action = -1;
-		
-		// If this agent doesn't have the flag, make goal the enemy flag
-		if( !env.hasFlag() ) 
-		{
-			goalNorth = env.isFlagNorth( AgentEnvironment.ENEMY_TEAM, false );
-			goalSouth = env.isFlagSouth( AgentEnvironment.ENEMY_TEAM, false );
-			goalEast = env.isFlagEast( AgentEnvironment.ENEMY_TEAM, false );
-			goalWest = env.isFlagWest( AgentEnvironment.ENEMY_TEAM, false );
-		}
-		
-		// Otherwise we have the enemy flag, make a beeline for our base
-		else 
-		{
-			goalNorth = env.isBaseNorth( AgentEnvironment.OUR_TEAM, false );
-			goalSouth = env.isBaseSouth( AgentEnvironment.OUR_TEAM, false );
-			goalEast = env.isBaseEast( AgentEnvironment.OUR_TEAM, false );
-			goalWest = env.isBaseWest( AgentEnvironment.OUR_TEAM, false );
-		}
-		
-		// if the goal is north only, and we're not blocked
-		// move north
-		if( goalNorth && ! goalEast && ! goalWest && !obstNorth )
-			return action = AgentAction.MOVE_NORTH;
-			
-		// if goal both north and east
-		if( goalNorth && goalEast ) {
-			// pick north or east for move with 50/50 chance
-			if( Math.random() < 0.5 && !obstNorth )
-				return action = AgentAction.MOVE_NORTH;
-			if( !obstEast )
-				return action = AgentAction.MOVE_EAST;
-			if( !obstNorth )
-				return action = AgentAction.MOVE_NORTH;
-			}	
-			
-		// if goal both north and west	
-		if( goalNorth && goalWest ) {
-			// pick north or west for move with 50/50 chance
-			if( Math.random() < 0.5 && !obstNorth ) 
-				return action = AgentAction.MOVE_NORTH;
-			if( !obstWest )
-				return action = AgentAction.MOVE_WEST;
-			if( !obstNorth )
-				return action = AgentAction.MOVE_NORTH;
-			}
-		
-		// if the goal is south only, and we're not blocked
-		// move south
-		if( goalSouth && ! goalEast && ! goalWest && !obstSouth )
-			return action = AgentAction.MOVE_SOUTH;
-		
-		// do same for southeast and southwest as for north versions	
-		if( goalSouth && goalEast ) {
-			if( Math.random() < 0.5 && !obstSouth )
-				return action = AgentAction.MOVE_SOUTH;
-			if( !obstEast ) 
-				return action = AgentAction.MOVE_EAST;
-			if( !obstSouth )
-				return action = AgentAction.MOVE_SOUTH;
-		}
-				
-		if( goalSouth && goalWest && !obstSouth ) {
-			if( Math.random() < 0.5 )
-				return action = AgentAction.MOVE_SOUTH;
-			if( !obstWest )
-				return action = AgentAction.MOVE_WEST;
-			if( !obstSouth )
-				return action = AgentAction.MOVE_SOUTH;
-		}
-		
-		// if the goal is east only, and we're not blocked
-		if( goalEast && !obstEast )
-			return action = AgentAction.MOVE_EAST;
-			
-		// if the goal is west only, and we're not blocked	
-		if( goalWest && !obstWest )
-			return action = AgentAction.MOVE_WEST;
-		
-		// otherwise, make any unblocked move
-		if( !obstNorth )
-			return action = AgentAction.MOVE_NORTH;
-		else if( !obstSouth )
-			return action = AgentAction.MOVE_SOUTH;
-		else if( !obstEast )
-			return action = AgentAction.MOVE_EAST;
-		else if( !obstWest )
-			return action = AgentAction.MOVE_WEST;
-		// completely blocked!
-		else
-			return action = AgentAction.DO_NOTHING;	
-	}
-	
+	// Updates the current node the Agent is on.
+	// Updates the NSEW nodes of the current node the Agent is on.
 	private int UpdateCurrentNode(ObsType n, ObsType s, ObsType e, ObsType w, boolean hasFlag)
 	{	
 		currentNode = map.get(new Key(xPos, yPos));
@@ -656,7 +603,9 @@ public class txb130030Agent extends Agent
 		Node eNode = map.get(new Key(xPos+1, yPos));	
 		Node wNode = map.get(new Key(xPos-1, yPos));	
 		
-		// Automatically sets the value of the node to -1000 if it's an obstacle, enemy, or null
+		// We check if the retrieved node is null just in case.
+		// Otherwise, we update the node type UNLESS it is an Obstacle (there can't magically be no obstacle anymore)
+		
 		if(nNode == null)
 			nNode = new Node(n, xPos, yPos+1, enemyBase.Distance(xPos, yPos+1));
 		else if(nNode.type != ObsType.Obstacle)
@@ -677,13 +626,16 @@ public class txb130030Agent extends Agent
 		else if(wNode.type != ObsType.Obstacle)
 			wNode.type = w;
 		
+		// Put the 
 		map.put(currentNode.getKey(), currentNode);
 		map.put(nNode.getKey(), nNode);
 		map.put(sNode.getKey(), sNode);
 		map.put(eNode.getKey(), eNode);
 		map.put(wNode.getKey(), wNode);
 		
-		// If the agent doesn't have the flag, return if the enemy flag/base is within reach
+		// This is to check if any of the NSEW nodes that we just updated are actually the
+		// enemy or team bases. Used to bypass searaching if we can just go immediately to the flag
+		// Should probably decouple this from the function, but it works for now.
 		if(!hasFlag)
 		{
 			if(nNode.type == ObsType.EnemFlag || nNode.type == ObsType.EnemBase)
@@ -711,14 +663,12 @@ public class txb130030Agent extends Agent
 			else
 				return -100;			
 		}
-		//System.out.println("North node type: " + n);
-		//System.out.println("South node type: " + s);
-		//System.out.println("East node type: " + e);
-		//System.out.println("West node type: " + w);
 	}
 	
-	// Adds a node at a given IMMEDIATE X,Y coordinate.
+
+	// Checks what type the NSEW node is from the current position using the AgentEnvironment
 	// NSEW tells us in what direction relative to the Agent the node we're checking is
+	// 0:N, 1:S, 2:E, 3:W
 	private ObsType CheckType(AgentEnvironment env, int NSEW)
 	{
 		if(checkAgentAdjacent(env, NSEW, false))
@@ -742,7 +692,9 @@ public class txb130030Agent extends Agent
 		return ObsType.None;
 	}
 	
-	// Checks if there is an Agent adjacent to the environment
+	// Checks if there is an Agent (either friend or enemy) adjacent to the current position
+	// NSEW tells us in what direction relative to the Agent the node we're checking is
+	// 0:N, 1:S, 2:E, 3:W
 	private boolean checkAgentAdjacent(AgentEnvironment e, int NSEW, boolean enemTeam)
 	{
 		if(enemTeam){
@@ -773,7 +725,9 @@ public class txb130030Agent extends Agent
 	}
 	
 
-	// Checks if there is a Flag adjacent to the Agent entity
+	// Checks if there is a Flag (enemy or team) adjacent to the Agent
+	// NSEW tells us in what direction relative to the Agent the node we're checking is
+	// 0:N, 1:S, 2:E, 3:W
 	private boolean checkFlagAdjacent(AgentEnvironment e, int NSEW, boolean enemTeam)
 	{
 		if(enemTeam){
@@ -804,6 +758,8 @@ public class txb130030Agent extends Agent
 	}
 
 	// Checks if there is an obstacle directly adjacent to the Agent
+	// NSEW tells us in what direction relative to the Agent the node we're checking is
+	// 0:N, 1:S, 2:E, 3:W
 	private boolean checkObsAdjacent(AgentEnvironment e, int NSEW)
 	{
 		switch(NSEW){
@@ -819,6 +775,9 @@ public class txb130030Agent extends Agent
 		return false;
 	}
 
+	// Checks if there is a base (enemy or team) directly aadjacent to the agent
+	// NSEW tells us in what direction relative to the Agent the node we're checking is
+	// 0:N, 1:S, 2:E, 3:W
 	private boolean checkBaseAdjacent(AgentEnvironment e, int NSEW, boolean enemTeam)
 	{
 		if(enemTeam){
